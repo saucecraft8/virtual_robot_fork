@@ -1,29 +1,35 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.hardware.lynx.LynxModule;
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.*;
 import org.firstinspires.ftc.robotcore.external.navigation.*;
 
-/**
- * Example OpMode. Demonstrates use of gyro, color sensor, encoders, and telemetry.
- *
- */
-@TeleOp(name = "Mecanum TeleOp", group = "MecanumBot")
-public class MecanumDemo extends LinearOpMode {
 
-    DcMotorEx FL , BL , FR , BR;
+@Autonomous(name = "Mecanum Auton", group = "MecanumBot")
+public class MecanumAutonTesting extends LinearOpMode {
+
+    DcMotorEx FL , FR , BL , BR , odoR , odoL , odoX;
+    MecOdo odo;
     BNO055IMU IMU;
     Orientation lastAngles = new Orientation();
     double globalAngle, correction;
     final float sqrt2 = 1.41421356237f;
 
     public void runOpMode(){
-        BL = hardwareMap.get(DcMotorEx.class, "back_left_motor");
-        FL = hardwareMap.get(DcMotorEx.class, "front_left_motor");
-        FR = hardwareMap.get(DcMotorEx.class, "front_right_motor");
-        BR = hardwareMap.get(DcMotorEx.class, "back_right_motor");
+        FL = hardwareMap.get(DcMotorEx.class , "front_left_motor");
+        FR = hardwareMap.get(DcMotorEx.class , "front_right_motor");
+        BL = hardwareMap.get(DcMotorEx.class , "back_left_motor");
+        BR = hardwareMap.get(DcMotorEx.class , "back_right_motor");
+
+        odoR = hardwareMap.get(DcMotorEx.class , "enc_right");
+        odoL = hardwareMap.get(DcMotorEx.class , "enc_left");
+        odoX = hardwareMap.get(DcMotorEx.class , "enc_x");
+        odo  = new MecOdo(new DcMotorEx[]{odoR , odoL , odoX});
+        odo.resetOdometry(0, 0, 0);
 
         FR.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         FL.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -60,31 +66,18 @@ public class MecanumDemo extends LinearOpMode {
         telemetry.update();
 
         waitForStart();
+
+        // getRuntime() returns seconds opModes have been running
         while (opModeIsActive()){
+            odo.updateOdometry();
 
+            moveDeg(-45 , 0.5 , 0.4);
 
-            telemetry.addData("Status", "Running");
-
-            double y = gamepad1.left_stick_y;
-            double x = gamepad1.left_stick_x;
-            double rx = gamepad1.right_stick_x;
-
-            double angle = Math.atan2(y , x) + getAngle();
-            double transform = Math.sqrt(x * x + y * y);
-
-            telemetry.addData("transform", transform);
-
-            FL.setPower((transform * ((Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2);
-            FR.setPower((transform * ((-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2);
-            BL.setPower((transform * ((Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2);
-            BR.setPower((transform * ((-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2);
-
-            telemetry(angle);
+            telemetry(getAngle());
         }
-        BL.setPower(0);
-        FL.setPower(0);
-        FR.setPower(0);
-        BR.setPower(0);
+
+        telemetry(getAngle());
+        moveOff();
     }
 
     private void resetAngle()
@@ -125,6 +118,10 @@ public class MecanumDemo extends LinearOpMode {
      * Prints telemetry information
      */
     private void telemetry(double angle) {
+        telemetry.addData("Odometry", "\nx: " + odo.getPose()[0] + "\ny: " + odo.getPose()[1] + "\nh: " + Math.toDegrees(odo.getPose()[2]));
+        telemetry.addData("Angle", Math.toDegrees(angle));
+        telemetry.addData("AngleM", getAngle());
+
         telemetry.addData("FL Power", FL.getPower());
         telemetry.addData("FL Raw" , (Math.sin(angle) - Math.cos(angle)) / sqrt2);
 
@@ -137,10 +134,70 @@ public class MecanumDemo extends LinearOpMode {
         telemetry.addData("BR Power", BR.getPower());
         telemetry.addData("BR Raw" , (-Math.sin(angle) + Math.cos(angle)) / sqrt2);
 
-
-        telemetry.addData("Angle", Math.toDegrees(angle));
-        telemetry.addData("AngleM", getAngle());
-
         telemetry.update();
+    }
+
+    private void moveXY(double x , double y , double rx) {
+        double transform = Math.sqrt(x * x + y * y);
+        double angle = Math.atan2(y , x) + getAngle();
+        double[] power = {
+                (transform * ((Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
+                (transform * ((-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
+                (transform * ((Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2,
+                (transform * ((-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2
+        };
+
+        /*
+        double max = max(power);
+        if(transform >= 1 || max > 1) {
+            for (int i = 0; i < power.length; i++)
+                power[i] = power[i] / max;
+        }
+         */
+
+        FL.setPower(power[0]);
+        FR.setPower(power[1]);
+        BL.setPower(power[2]);
+        BR.setPower(power[3]);
+    }
+
+    private void moveDeg(double degrees , double speed , double rx) {
+        double x = speed * Math.cos(Math.toRadians(degrees));
+        double y = speed * Math.sin(Math.toRadians(degrees));
+        double transform = Math.sqrt(x * x + y * y);
+        double angle = Math.toRadians(degrees) + getAngle();
+        double[] power = {
+                (transform * ((Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
+                (transform * ((-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
+                (transform * ((Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2,
+                (transform * ((-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2
+        };
+        /*
+        double max = max(power);
+        if(transform >= 1 || max > 1) {
+            for (int i = 0; i < power.length; i++)
+                power[i] = power[i] / max;
+        }
+         */
+
+        FL.setPower(power[0]);
+        FR.setPower(power[1]);
+        BL.setPower(power[2]);
+        BR.setPower(power[3]);
+    }
+
+    private void moveOff() {
+        FL.setPower(0);
+        FR.setPower(0);
+        BL.setPower(0);
+        BR.setPower(0);
+    }
+
+    private double max(double[] nums) {
+        double max = nums[0];
+        for(int i = 1 ; i < nums.length ; i++)
+            if(nums[i] > max)
+                max = nums[i];
+        return max;
     }
 }
