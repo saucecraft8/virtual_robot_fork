@@ -78,13 +78,14 @@ public class MecanumAutonPathCorrection extends LinearOpMode {
 
             Function<Double , Double> first = new Function<Double, Double>() {
                 @Override
-                public Double apply(Double aDouble) {
-                    return 3 * (aDouble - 2) * (aDouble - 2);
+                public Double apply(Double x) {
+                    return Math.pow((x - 2) , 3);
                 }
             };
 
             moveOff();
-            // moveDeg(Math.toDegrees(Math.atan2(3 * (t - 2) * (t - 2) , 1) - (getAngle() - Math.atan2(3 * (t-2) * (t - 2) , 1) + Math.PI)), 1 , 1);
+            moveDeg(first , 1 , 0);
+            // moveDeg(Math.toDegrees(Math.atan2(3 * (t - 2) * (t - 2) , 1)), 1 , 1);
             // moveXY(1 , 3 * (t-2) * (t - 2) , 1 , 1 );
 
             calcMotionConstants(t);
@@ -164,92 +165,21 @@ public class MecanumAutonPathCorrection extends LinearOpMode {
         telemetry.update();
     }
 
-    // Rotational motion + function path is SUPER scuffed
-    private void moveXY(double x , double y , double rx) {
-        y *= -1;
-        double transform = Math.sqrt(x * x + y * y);
-        double angle = Math.atan2(y , x) + getAngle();
-        double[] power = {
-                (transform * ((Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
-                (transform * ((-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
-                (transform * ((Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2,
-                (transform * ((-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2
-        };
-
-        double max = maxAbs(power);
-        if(transform >= 1 || max > 1) {
-            for (int i = 0; i < power.length; i++)
-                power[i] = power[i] / max;
-        }
-
-        FL.setPower(power[0]);
-        FR.setPower(power[1]);
-        BL.setPower(power[2]);
-        BR.setPower(power[3]);
-    }
-
-    // fs should never be greater than 1
-    private double[] getMoveXY(double x , double y , double rx , double fs) {
-        y *= -1;
-        if(fs > 1) fs = 1;
-
-        double angle = Math.atan2(y , x) + getAngle();
-        double[] power = {
-                ((fs * (Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
-                ((fs * (-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
-                ((fs * (Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2,
-                ((fs * (-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2
-        };
-
-        double max = maxAbs(power);
-        if(fs >= 1 || max > 1)
-            for (int i = 0; i < power.length; i++)
-                power[i] = power[i] / max;
-
-        return power;
-    }
-
     /**
      * Calculates and returns the power for each motor to move at a certain heading, speed, and angular velocity
      *
-     * @param degrees   The heading
+     * @param func      The function used for the path
      * @param speed     The relative linear velocity (max 1)
      * @param rx        The relative angular velocity (max 1)
-     * @return          An array of motor powers [FL , FR , BL , BR]
      */
-    private double[] getMoveDeg(double degrees , double speed , double rx) {
-        double x = speed * Math.cos(Math.toRadians(degrees));
-        double y = speed * Math.sin(Math.toRadians(degrees));
+    private void moveDeg(Function<Double , Double> func , double speed , double rx) {
         // Change angle back to positive if it starts being weird
-        double angle = -Math.toRadians(degrees) + getAngle();
+        double angle = -Math.atan2(ddx(func , t) , 1);
         double[] power = {
-                (speed * ((Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
-                (speed * ((-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2,
-                (speed * ((Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2,
-                (speed * ((-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2
-        };
-
-        double max = maxAbs(power);
-        if(speed >= 1 || max > 1) {
-            for (int i = 0; i < power.length; i++)
-                power[i] = power[i] / max;
-        }
-
-//        FL.setPower(power[0]);
-//        FR.setPower(power[1]);
-//        BL.setPower(power[2]);
-//        BR.setPower(power[3]);
-        return power;
-    }
-
-    private void moveDeg(double degrees , double speed , double rx , Function<Double , Double> func) {
-        // Change angle back to positive if it starts being weird
-        double angle = -Math.toRadians(degrees) + getAngle();
-        double[] power = {
-                ((speed * ((Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2) + pathCorrection(func , speed , rx)[0],
-                ((speed * ((-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2) + pathCorrection(func , speed , rx)[1],
-                ((speed * ((Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2) + pathCorrection(func , speed , rx)[2],
-                ((speed * ((-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2) + pathCorrection(func , speed , rx)[3]
+                ((speed * ((Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2)/* + pathCorrection(func , speed , rx)[0]*/,
+                ((speed * ((-Math.sin(angle) - Math.cos(angle)) / sqrt2) - rx) / 2)/* + pathCorrection(func , speed , rx)[1]*/,
+                ((speed * ((Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2)/* + pathCorrection(func , speed , rx)[2]*/,
+                ((speed * ((-Math.sin(angle) + Math.cos(angle)) / sqrt2) - rx) / 2)/* + pathCorrection(func , speed , rx)[3]*/
         };
 
         double max = maxAbs(power);
@@ -280,7 +210,7 @@ public class MecanumAutonPathCorrection extends LinearOpMode {
     }
 
     private double ddx(Function<Double , Double> func, double x) {
-        return (func.apply(x + 0.0001) + func.apply(x - 0.0001)) / 0.0002;
+        return (func.apply(x + 0.0001) - func.apply(x - 0.0001)) / 0.0002;
     }
 
     /**
